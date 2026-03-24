@@ -778,7 +778,13 @@ function AdminLogin(){
 function Admin(){
   const{go,pricing,setPricing,orders,addOrder,updateOrderStatus,priceHistory,addPriceHistory,addNotif,settings,setSettings,resetOrders,resetNotifs,customProducts,addProduct,updateProduct,removeProduct,session,setSession}=useApp();
   const[tab,setTab]=useState("dashboard");const[editMode,setEditMode]=useState(false);const[toast,setToast]=useState(null);const[local,setLocal]=useState(null);const[editProd,setEditProd]=useState(null);const[prodSearch,setProdSearch]=useState("");
-  const tabs=[{id:"dashboard",l:"📊 대시보드"},{id:"products",l:"📦 상품관리"},{id:"print",l:"인쇄비"},{id:"paper",l:"내지종이"},{id:"cover",l:"표지종이"},{id:"coating",l:"코팅"},{id:"binding",l:"제본"},{id:"orders",l:"주문관리"},{id:"history",l:"📜 변경이력"},{id:"settings",l:"⚙️ 설정"}];
+  const tabs=[
+    {id:"dashboard",l:<span className="flex items-center gap-1.5"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="18" y="3" width="4" height="18"/><rect x="10" y="8" width="4" height="13"/><rect x="2" y="13" width="4" height="8"/></svg>대시보드</span>},
+    {id:"products",l:<span className="flex items-center gap-1.5"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>상품관리</span>},
+    {id:"print",l:"인쇄비"},{id:"paper",l:"내지종이"},{id:"cover",l:"표지종이"},{id:"coating",l:"코팅"},{id:"binding",l:"제본"},{id:"orders",l:"주문관리"},
+    {id:"history",l:<span className="flex items-center gap-1.5"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>변경이력</span>},
+    {id:"settings",l:<span className="flex items-center gap-1.5"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>설정</span>}
+  ];
   useEffect(()=>{if(editMode)setLocal(JSON.parse(JSON.stringify(pricing)));else setLocal(null);},[editMode]);
 
   const handleSave=()=>{
@@ -901,13 +907,13 @@ function Admin(){
   {/* Dashboard Tab */}
   {tab==="dashboard"&&(<div className="space-y-5">
     <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-4">
-      <StatCard icon="💰" label="총 매출" value={"₩"+fmt(stats.totalRev)} color="amber"/>
-      <StatCard icon="📦" label="총 주문" value={orders.length+"건"} sub={"평균 ₩"+fmt(stats.avgOrder)} color="blue"/>
-      <StatCard icon="⏳" label="진행 중" value={stats.pendingOrders+"건"} color="purple"/>
-      <StatCard icon="✅" label="완료" value={stats.completedOrders+"건"} color="green"/>
-      <StatCard icon="🏷️" label="커스텀상품" value={customProducts.length+"종"} sub={"활성 "+customProducts.filter(p=>p.active).length} color="amber"/>
+      <StatCard icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>} label="총 매출" value={"₩"+fmt(stats.totalRev)} color="amber"/>
+      <StatCard icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>} label="총 주문" value={orders.length+"건"} sub={"평균 ₩"+fmt(stats.avgOrder)} color="blue"/>
+      <StatCard icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>} label="진행 중" value={stats.pendingOrders+"건"} color="purple"/>
+      <StatCard icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>} label="완료" value={stats.completedOrders+"건"} color="green"/>
+      <StatCard icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>} label="커스텀상품" value={customProducts.length+"종"} sub={"활성 "+customProducts.filter(p=>p.active).length} color="amber"/>
     </div>
-    {!orders.length&&<div className="bg-green-50 border border-green-200 rounded-2xl p-6 text-center"><p className="text-green-800 font-bold mb-2">데이터가 없습니다</p><p className="text-green-600 text-sm mb-4">샘플 데이터를 생성하면 대시보드를 미리 확인할 수 있습니다</p><button onClick={genDemo} className="px-6 py-2.5 rounded-xl font-bold text-white text-sm" style={{background:T.accent}}>🎲 데모 데이터 15건 생성</button></div>}
+    {!orders.length&&<div className="bg-green-50 border border-green-200 rounded-2xl p-6 text-center"><p className="text-green-800 font-bold mb-2">데이터가 없습니다</p><p className="text-green-600 text-sm mb-4">샘플 데이터를 생성하면 대시보드를 미리 확인할 수 있습니다</p><button onClick={genDemo} className="px-6 py-2.5 rounded-xl font-bold text-white text-sm flex items-center gap-2 mx-auto" style={{background:T.accent}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>데모 데이터 15건 생성</button></div>}
     <div className="grid lg:grid-cols-2 gap-5">
       <div className="bg-white rounded-xl shadow-sm p-5"><h3 className="font-bold text-sm mb-4">월별 매출</h3>
         {stats.revenueChart.length>0?<ResponsiveContainer width="100%" height={220}><BarChart data={stats.revenueChart}><XAxis dataKey="name" tick={{fontSize:11}}/><YAxis tick={{fontSize:10}} tickFormatter={v=>fmt(v)}/><Tooltip formatter={v=>"₩"+fmt(v)}/><Bar dataKey="매출" fill={T.accent} radius={[6,6,0,0]}/></BarChart></ResponsiveContainer>:<div className="h-48 flex items-center justify-center text-gray-400 text-sm">데이터 없음</div>}
