@@ -531,35 +531,33 @@ function Configure(){
         <div className="space-y-4">
           {/* 1단계: 종이 종류 */}
           <div>
-            <p className="text-xs font-medium text-gray-400 mb-2">종이 종류</p>
+            <p className="text-xs font-medium mb-2" style={{color:T.muted}}>종이 종류</p>
             <div className="flex flex-wrap gap-2">
               {PAPER_TYPES.map(t=>(
                 <button key={t}
                   onClick={()=>{const m=(cfg.innerPaper||"").match(/^(.*?)(\d+)$/);if(m?.[1]!==t)set("innerPaper",t+PAPER_TYPE_MAP[t][0]);}}
-                  className={cn("px-3.5 py-1.5 rounded-full text-sm font-medium transition-all",
-                    innerPaperType===t?"bg-green-600 text-white shadow-sm":"bg-gray-100 text-gray-600 hover:bg-green-50 hover:text-green-700"
-                  )}
+                  className="px-3.5 py-1.5 rounded-full text-sm font-medium transition-all"
+                  style={innerPaperType===t?{background:T.accent,color:"#fff",boxShadow:T.sh}:{background:T.warm,color:T.sub,border:"1px solid "+T.border}}
                 >{t}</button>
               ))}
             </div>
           </div>
           {/* 2단계: 평량 */}
           <div>
-            <p className="text-xs font-medium text-gray-400 mb-2">평량 (g/㎡)</p>
+            <p className="text-xs font-medium mb-2" style={{color:T.muted}}>평량 (g/㎡)</p>
             <div className="flex flex-wrap gap-2">
               {(PAPER_TYPE_MAP[innerPaperType]||[]).map(w=>{const k=innerPaperType+w;return(
                 <button key={w} onClick={()=>set("innerPaper",k)}
-                  className={cn("px-3.5 py-1.5 rounded-xl text-sm font-bold border-2 transition-all",
-                    cfg.innerPaper===k?"border-green-500 bg-green-50 text-green-800":"border-gray-200 text-gray-500 hover:border-green-300 hover:text-green-700"
-                  )}
+                  className="px-3.5 py-1.5 rounded-lg text-sm font-semibold border-2 transition-all"
+                  style={cfg.innerPaper===k?{borderColor:T.accent,background:T.accentBg,color:T.accent}:{borderColor:T.border,background:T.card,color:T.text}}
                 >{w}g</button>
               );})}
             </div>
           </div>
           {/* 선택 결과 */}
-          <div className="flex items-center gap-2 px-3 py-2 bg-green-50/60 rounded-lg text-sm">
-            <span className="text-gray-400 text-xs">선택:</span>
-            <span className="font-bold text-green-700">{cfg.innerPaper}</span>
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm" style={{background:T.accentBg}}>
+            <span className="text-xs" style={{color:T.muted}}>선택:</span>
+            <span className="font-bold" style={{color:T.accent}}>{cfg.innerPaper}</span>
           </div>
         </div>
       </div>
