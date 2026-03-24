@@ -163,6 +163,9 @@ const PAPER_BASE=new Set(["46판","국판"]); // 기준가 컬럼 (직접입력)
 // CONSTANTS
 // ═══════════════════════════════════════════════════
 const FORMATS=["B6","A5","B5","A4"],PTYPES=DEF_PRICING.printTypes,IPAPERS=Object.keys(DEF_PRICING.innerPapers),CPAPERS=Object.keys(DEF_PRICING.coverPapers),COATS=["없음","유광코팅","무광코팅"],BINDS=DEF_PRICING.bindingTypes,ENDPS=Object.keys(DEF_PRICING.endpapers),SIDES=["단면","양면"],PPS=Object.keys(DEF_PRICING.postProc),PSIZES=DEF_PRICING.paperSizes;
+// 내지 종이: 종류 → 평량 맵 ("아트지" → ["80","100","120",...])
+const PAPER_TYPE_MAP=IPAPERS.reduce((acc,p)=>{const m=p.match(/^(.*?)(\d+)$/);if(m){const[,t,w]=m;if(!acc[t])acc[t]=[];acc[t].push(w);}return acc;},{});
+const PAPER_TYPES=Object.keys(PAPER_TYPE_MAP);
 const CATS=[
   {id:"photobook",name:"포토북",icon:"📖",illustId:"photobook",desc:"소중한 순간을 담은 프리미엄 포토북. 고급 용지와 정교한 인쇄로 특별한 앨범을 만들어 드립니다.",bg:"linear-gradient(135deg,#E8F5E9 0%,#C8E6C9 50%,#A5D6A7 100%)"},
   {id:"catalog",name:"카탈로그",icon:"📋",illustId:"catalog",desc:"제품의 가치를 높이는 고급 카탈로그. 전문 인쇄 기술로 브랜드의 격을 표현합니다.",bg:"linear-gradient(135deg,#FFF8E1 0%,#FFECB3 50%,#FFE082 100%)"},
@@ -465,6 +468,7 @@ function Configure(){
   const{go,addToCart,addCompare,savedCfgs,saveCfg,removeSavedCfg,settings}=useApp();
   const[cfg,setCfg]=useState({...DEF_CFG});const[step,setStep]=useState(0);const[files,setFiles]=useState([]);const[toast,setToast]=useState(null);const[mobPrice,setMobPrice]=useState(false);const[showEstimate,setShowEstimate]=useState(false);const[showSaved,setShowSaved]=useState(false);const[dragOver,setDragOver]=useState(false);const[saveName,setSaveName]=useState("");
   const set=(k,v)=>setCfg(p=>({...p,[k]:v}));const quote=useMemo(()=>calcQuote(cfg),[cfg]);
+  const innerPaperType=useMemo(()=>(cfg.innerPaper||"").match(/^(.*?)(\d+)$/)?.[1]||PAPER_TYPES[0],[cfg.innerPaper]);
   const printAvail=useMemo(()=>PTYPES.map((pt,i)=>{const r=lookupLE(cfg.pages,DEF_PRICING.printTable,"c");return r.v[i]!=null;}),[cfg.pages]);
   const togglePP=pp=>setCfg(p=>({...p,postProcessing:p.postProcessing.includes(pp)?p.postProcessing.filter(x=>x!==pp):[...p.postProcessing,pp]}));
   const handleAdd=async()=>{
@@ -521,7 +525,46 @@ function Configure(){
   const estPrintRef="est-formal-print";
   const sc=[
     <div className="space-y-7" key="s0"><div><label className="block text-sm font-bold text-gray-700 mb-2.5">판형</label><div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">{FORMATS.map(f=><Chip key={f} label={f} sub={DEF_PRICING.formatMap[f]?.desc} active={cfg.format===f} onClick={()=>set("format",f)}/>)}</div></div><div><label className="block text-sm font-bold text-gray-700 mb-2.5">인쇄 방식</label><div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">{PTYPES.map((pt,i)=><Chip key={pt} label={pt} active={cfg.printType===pt} onClick={()=>set("printType",pt)} disabled={!printAvail[i]} sub={!printAvail[i]?"페이지수 부족":null}/>)}</div></div><div className="grid grid-cols-2 gap-5"><div><label className="block text-sm font-bold text-gray-700 mb-2.5">페이지 수</label><input type="number" value={cfg.pages} onChange={e=>set("pages",Math.max(1,parseInt(e.target.value)||1))} className="w-full h-11 px-4 border border-gray-200 rounded-lg font-bold focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-200"/></div><div><label className="block text-sm font-bold text-gray-700 mb-2.5">부수</label><QI value={cfg.quantity} onChange={v=>set("quantity",v)}/></div></div></div>,
-    <div className="space-y-7" key="s1"><div><label className="block text-sm font-bold text-gray-700 mb-2.5">내지 종이</label><div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">{IPAPERS.map(p=><Chip key={p} label={p} active={cfg.innerPaper===p} onClick={()=>set("innerPaper",p)}/>)}</div></div><div><label className="block text-sm font-bold text-gray-700 mb-2.5">양/단면</label><div className="grid grid-cols-2 gap-2.5">{SIDES.map(s=><Chip key={s} label={s==="양면"?"양면 (앞뒤)":"단면 (한면)"} active={cfg.innerSide===s} onClick={()=>set("innerSide",s)} sub={DEF_PRICING.sideRate[s]+"원/p"}/>)}</div></div></div>,
+    <div className="space-y-7" key="s1">
+      <div>
+        <label className="block text-sm font-bold text-gray-700 mb-3">내지 종이</label>
+        <div className="space-y-4">
+          {/* 1단계: 종이 종류 */}
+          <div>
+            <p className="text-xs font-medium text-gray-400 mb-2">종이 종류</p>
+            <div className="flex flex-wrap gap-2">
+              {PAPER_TYPES.map(t=>(
+                <button key={t}
+                  onClick={()=>{const m=(cfg.innerPaper||"").match(/^(.*?)(\d+)$/);if(m?.[1]!==t)set("innerPaper",t+PAPER_TYPE_MAP[t][0]);}}
+                  className={cn("px-3.5 py-1.5 rounded-full text-sm font-medium transition-all",
+                    innerPaperType===t?"bg-green-600 text-white shadow-sm":"bg-gray-100 text-gray-600 hover:bg-green-50 hover:text-green-700"
+                  )}
+                >{t}</button>
+              ))}
+            </div>
+          </div>
+          {/* 2단계: 평량 */}
+          <div>
+            <p className="text-xs font-medium text-gray-400 mb-2">평량 (g/㎡)</p>
+            <div className="flex flex-wrap gap-2">
+              {(PAPER_TYPE_MAP[innerPaperType]||[]).map(w=>{const k=innerPaperType+w;return(
+                <button key={w} onClick={()=>set("innerPaper",k)}
+                  className={cn("px-3.5 py-1.5 rounded-xl text-sm font-bold border-2 transition-all",
+                    cfg.innerPaper===k?"border-green-500 bg-green-50 text-green-800":"border-gray-200 text-gray-500 hover:border-green-300 hover:text-green-700"
+                  )}
+                >{w}g</button>
+              );})}
+            </div>
+          </div>
+          {/* 선택 결과 */}
+          <div className="flex items-center gap-2 px-3 py-2 bg-green-50/60 rounded-lg text-sm">
+            <span className="text-gray-400 text-xs">선택:</span>
+            <span className="font-bold text-green-700">{cfg.innerPaper}</span>
+          </div>
+        </div>
+      </div>
+      <div><label className="block text-sm font-bold text-gray-700 mb-2.5">양/단면</label><div className="grid grid-cols-2 gap-2.5">{SIDES.map(s=><Chip key={s} label={s==="양면"?"양면 (앞뒤)":"단면 (한면)"} active={cfg.innerSide===s} onClick={()=>set("innerSide",s)} sub={DEF_PRICING.sideRate[s]+"원/p"}/>)}</div></div>
+    </div>,
     <div className="space-y-7" key="s2"><div><label className="block text-sm font-bold text-gray-700 mb-2.5">표지 종이</label><div className="grid grid-cols-2 gap-2.5">{CPAPERS.map(p=><Chip key={p} label={p} active={cfg.coverPaper===p} onClick={()=>set("coverPaper",p)}/>)}</div></div><div><label className="block text-sm font-bold text-gray-700 mb-2.5">표지 인쇄면</label><div className="grid grid-cols-2 gap-2.5">{SIDES.map(s=><Chip key={s} label={s} active={cfg.coverSide===s} onClick={()=>set("coverSide",s)}/>)}</div></div><div><label className="block text-sm font-bold text-gray-700 mb-2.5">코팅</label><div className="grid grid-cols-3 gap-2.5">{COATS.map(c=><Chip key={c} label={c} active={cfg.coating===c} onClick={()=>set("coating",c)}/>)}</div></div></div>,
     <div className="space-y-7" key="s3"><div><label className="block text-sm font-bold text-gray-700 mb-2.5">제본</label><div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">{BINDS.map(b=><Chip key={b} label={b} active={cfg.binding===b} onClick={()=>set("binding",b)}/>)}</div></div><div><label className="block text-sm font-bold text-gray-700 mb-2.5">면지</label><div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">{ENDPS.map(e=><Chip key={e} label={e} active={cfg.endpaper===e} onClick={()=>set("endpaper",e)}/>)}</div></div><div><label className="block text-sm font-bold text-gray-700 mb-2.5">후가공 (복수)</label><div className="grid grid-cols-3 sm:grid-cols-5 gap-2.5">{PPS.map(pp=>(<button key={pp} onClick={()=>togglePP(pp)} className={cn("px-3 py-2.5 rounded-xl border-2 text-sm font-medium",cfg.postProcessing.includes(pp)?"border-green-500 bg-green-50 text-green-800":"border-gray-200 text-gray-600")}>{pp} <span className="text-xs text-gray-400">+₩{fmt(DEF_PRICING.postProc[pp])}</span></button>))}</div></div></div>,
     <div className="space-y-6" key="s4-est">
