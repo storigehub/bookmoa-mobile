@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo, useCallback, createContext, useContext } from "react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import * as XLSX from 'xlsx';
+import { supabase } from './lib/supabase';
 
 // ═══════════════════════════════════════════════════
 // DESIGN TOKENS (BookMoa-inspired Green Theme)
@@ -466,7 +467,13 @@ function Configure(){
   const set=(k,v)=>setCfg(p=>({...p,[k]:v}));const quote=useMemo(()=>calcQuote(cfg),[cfg]);
   const printAvail=useMemo(()=>PTYPES.map((pt,i)=>{const r=lookupLE(cfg.pages,DEF_PRICING.printTable,"c");return r.v[i]!=null;}),[cfg.pages]);
   const togglePP=pp=>setCfg(p=>({...p,postProcessing:p.postProcessing.includes(pp)?p.postProcessing.filter(x=>x!==pp):[...p.postProcessing,pp]}));
-  const handleAdd=()=>{addToCart({id:uid(),cfg:{...cfg},quote,files:files.map(f=>f.name)});setToast("장바구니에 담겼습니다");setTimeout(()=>go("cart"),800);};
+  const handleAdd=async()=>{
+    let fileData=[];
+    if(files.length>0&&supabase){
+      for(const f of files){const path=`${uid()}/${f.name}`;const{error}=await supabase.storage.from("order-files").upload(path,f);if(!error){const{data:u}=supabase.storage.from("order-files").getPublicUrl(path);fileData.push({name:f.name,url:u?.publicUrl||""});}else fileData.push({name:f.name,url:""});}
+    }else{fileData=files.map(f=>({name:f.name,url:""}));}
+    addToCart({id:uid(),cfg:{...cfg},quote,files:fileData});setToast("장바구니에 담겼습니다");setTimeout(()=>go("cart"),800);
+  };
   const handleCompare=()=>{addCompare({id:uid(),cfg:{...cfg},quote});setToast("비교 목록에 추가됨");};
   const handleSaveCfg=()=>{saveCfg({name:saveName||cfg.format+"/"+cfg.printType+"/"+cfg.binding,cfg:{...cfg}});setToast("사양이 저장되었습니다");setSaveName("");setShowSaved(false);};
   const loadSaved=(sc)=>{setCfg({...DEF_CFG,...sc.cfg});setStep(0);setShowSaved(false);setToast("저장된 사양 불러옴");};
@@ -732,8 +739,44 @@ function ReceiptModal({order,onClose}){
 // ═══════════════════════════════════════════════════
 // ADMIN (Phase 3: Dashboard + Price History + Enhanced)
 // ═══════════════════════════════════════════════════
+function AdminLogin(){
+  const{setSession}=useApp();
+  const[email,setEmail]=useState("admin@bookmoa.com");
+  const[pw,setPw]=useState("");
+  const[err,setErr]=useState("");
+  const[loading,setLoading]=useState(false);
+  const handleLogin=async(e)=>{
+    e.preventDefault();setErr("");setLoading(true);
+    if(!supabase){setErr("Supabase가 설정되지 않았습니다.");setLoading(false);return;}
+    const{data,error}=await supabase.auth.signInWithPassword({email,password:pw});
+    if(error)setErr("이메일 또는 비밀번호가 올바르지 않습니다.");
+    else setSession(data.session);
+    setLoading(false);
+  };
+  return(<div className="min-h-screen flex items-center justify-center" style={{background:T.warm}}>
+    <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-sm">
+      <div className="text-center mb-8">
+        <div className="text-3xl font-black mb-1" style={{color:T.accent}}>북모아</div>
+        <div className="text-gray-400 text-sm font-medium">Admin Console</div>
+      </div>
+      <form onSubmit={handleLogin} className="space-y-4">
+        <div><label className="block text-xs font-bold text-gray-500 mb-1">이메일</label>
+          <input type="email" value={email} onChange={e=>setEmail(e.target.value)} required
+            className="w-full h-11 px-4 border-2 border-gray-200 rounded-xl text-sm focus:border-green-500 focus:outline-none"/></div>
+        <div><label className="block text-xs font-bold text-gray-500 mb-1">비밀번호</label>
+          <input type="password" value={pw} onChange={e=>setPw(e.target.value)} required
+            className="w-full h-11 px-4 border-2 border-gray-200 rounded-xl text-sm focus:border-green-500 focus:outline-none"/></div>
+        {err&&<p className="text-red-500 text-xs text-center font-medium">{err}</p>}
+        <button type="submit" disabled={loading} className="w-full h-11 rounded-xl font-bold text-white text-sm disabled:opacity-60" style={{background:T.accent}}>
+          {loading?"로그인 중...":"로그인"}
+        </button>
+      </form>
+    </div>
+  </div>);
+}
+
 function Admin(){
-  const{go,pricing,setPricing,orders,addOrder,updateOrderStatus,priceHistory,addPriceHistory,addNotif,settings,setSettings,resetOrders,resetNotifs,customProducts,addProduct,updateProduct,removeProduct}=useApp();
+  const{go,pricing,setPricing,orders,addOrder,updateOrderStatus,priceHistory,addPriceHistory,addNotif,settings,setSettings,resetOrders,resetNotifs,customProducts,addProduct,updateProduct,removeProduct,session,setSession}=useApp();
   const[tab,setTab]=useState("dashboard");const[editMode,setEditMode]=useState(false);const[toast,setToast]=useState(null);const[local,setLocal]=useState(null);const[editProd,setEditProd]=useState(null);const[prodSearch,setProdSearch]=useState("");
   const tabs=[{id:"dashboard",l:"📊 대시보드"},{id:"products",l:"📦 상품관리"},{id:"print",l:"인쇄비"},{id:"paper",l:"내지종이"},{id:"cover",l:"표지종이"},{id:"coating",l:"코팅"},{id:"binding",l:"제본"},{id:"orders",l:"주문관리"},{id:"history",l:"📜 변경이력"},{id:"settings",l:"⚙️ 설정"}];
   useEffect(()=>{if(editMode)setLocal(JSON.parse(JSON.stringify(pricing)));else setLocal(null);},[editMode]);
@@ -849,7 +892,9 @@ function Admin(){
 
   const isPricingTab=["print","paper","cover","coating","binding"].includes(tab);
 
-  return(<div className="min-h-screen bg-gray-100"><div className="text-white" style={{background:T.dark}}><div className="max-w-7xl mx-auto px-4 h-12 flex items-center justify-between"><div className="flex items-center gap-3"><span className="font-black" style={{color:T.accent}}>북모아</span><span className="text-gray-400 text-xs font-medium">Admin Console</span></div><button onClick={()=>go("home")} className="text-gray-400 hover:text-white text-xs">← 사이트</button></div></div>
+  if(!session)return <AdminLogin/>;
+
+  return(<div className="min-h-screen bg-gray-100"><div className="text-white" style={{background:T.dark}}><div className="max-w-7xl mx-auto px-4 h-12 flex items-center justify-between"><div className="flex items-center gap-3"><span className="font-black" style={{color:T.accent}}>북모아</span><span className="text-gray-400 text-xs font-medium">Admin Console</span></div><div className="flex items-center gap-3"><button onClick={()=>go("home")} className="text-gray-400 hover:text-white text-xs">← 사이트</button><button onClick={()=>{supabase?.auth.signOut();setSession(null);go("home");}} className="text-gray-400 hover:text-red-400 text-xs">로그아웃</button></div></div></div>
 <div className="max-w-7xl mx-auto px-4 py-4">
   <div className="flex gap-1.5 mb-4 overflow-x-auto pb-1">{tabs.map(t=><button key={t.id} onClick={()=>{setTab(t.id);setEditMode(false);}} className={cn("px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all",tab===t.id?"text-white":"bg-white text-gray-600 hover:bg-gray-50")} style={tab===t.id?{background:T.accent,boxShadow:T.sh}:{}}>{t.l}</button>)}</div>
 
@@ -950,7 +995,7 @@ function Admin(){
       </select>
       <span className="text-xs text-gray-400 font-medium">{filteredOrders.length}/{orders.length}건</span>
     </div>
-    <div className="bg-white rounded-xl shadow-sm overflow-hidden"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="bg-gray-50">{["주문번호","날짜","고객","상품","금액","상태"].map(h=><th key={h} className="px-3 py-2 text-left font-bold text-gray-600 text-xs whitespace-nowrap">{h}</th>)}</tr></thead><tbody>{!filteredOrders.length&&<tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400 text-sm">{orders.length?"검색 결과 없음":"주문 없음"}</td></tr>}{filteredOrders.map((o)=>{const oi=orders.indexOf(o);const hasCust=o.items?.some(it=>it.isCustom||it.cfg?.productId);return(<tr key={o.id} className="border-t hover:bg-green-50/50"><td className="px-3 py-2 font-bold text-xs">{o.id}</td><td className="px-3 py-2 text-gray-500 text-xs">{dateStr(o.date)}</td><td className="px-3 py-2 text-xs">{o.customer?.name||"-"}</td><td className="px-3 py-2 text-xs">{o.items?.length}건{hasCust&&<span className="ml-1 bg-blue-100 text-blue-700 px-1 py-0.5 rounded text-[10px]">커스텀</span>}</td><td className="px-3 py-2 text-xs font-bold">₩{fmt(o.total)}</td><td className="px-3 py-2"><select value={o.status} onChange={e=>{const ns=parseInt(e.target.value);updateOrderStatus(oi,ns);addNotif({icon:STS[ns]?.icon||"📋",title:"상태 변경",body:o.id+" → "+STS[ns]?.label,date:now()});}} className="border rounded px-1.5 py-0.5 text-xs font-bold focus:outline-none focus:border-green-500">{STS.map((s,si)=><option key={si} value={si}>{s.icon} {s.label}</option>)}</select></td></tr>);})}</tbody></table></div></div>
+    <div className="bg-white rounded-xl shadow-sm overflow-hidden"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="bg-gray-50">{["주문번호","날짜","고객","상품","금액","파일","상태"].map(h=><th key={h} className="px-3 py-2 text-left font-bold text-gray-600 text-xs whitespace-nowrap">{h}</th>)}</tr></thead><tbody>{!filteredOrders.length&&<tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400 text-sm">{orders.length?"검색 결과 없음":"주문 없음"}</td></tr>}{filteredOrders.map((o)=>{const oi=orders.indexOf(o);const hasCust=o.items?.some(it=>it.isCustom||it.cfg?.productId);return(<tr key={o.id} className="border-t hover:bg-green-50/50"><td className="px-3 py-2 font-bold text-xs">{o.id}</td><td className="px-3 py-2 text-gray-500 text-xs">{dateStr(o.date)}</td><td className="px-3 py-2 text-xs">{o.customer?.name||"-"}</td><td className="px-3 py-2 text-xs">{o.items?.length}건{hasCust&&<span className="ml-1 bg-blue-100 text-blue-700 px-1 py-0.5 rounded text-[10px]">커스텀</span>}</td><td className="px-3 py-2 text-xs font-bold">₩{fmt(o.total)}</td><td className="px-3 py-2 text-xs">{(o.items?.flatMap(it=>it.files||[])||[]).filter(f=>f.url).map((f,fi)=>(<a key={fi} href={f.url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-blue-600 hover:underline" title={f.name}>📎 {f.name?.length>12?f.name.slice(0,12)+"…":f.name}</a>))}{!(o.items?.flatMap(it=>it.files||[])||[]).filter(f=>f.url).length&&<span className="text-gray-300">-</span>}</td><td className="px-3 py-2"><select value={o.status} onChange={e=>{const ns=parseInt(e.target.value);updateOrderStatus(oi,ns);addNotif({icon:STS[ns]?.icon||"📋",title:"상태 변경",body:o.id+" → "+STS[ns]?.label,date:now()});}} className="border rounded px-1.5 py-0.5 text-xs font-bold focus:outline-none focus:border-green-500">{STS.map((s,si)=><option key={si} value={si}>{s.icon} {s.label}</option>)}</select></td></tr>);})}</tbody></table></div></div>
   </div>}
 
   {/* Settings Tab (Phase 5) */}
@@ -999,10 +1044,14 @@ function ProdConfigure(){
   const sel=(gid,cid)=>setSelections(p=>({...p,[gid]:cid}));
   const fileIcon=(name)=>{const ext=(name||"").split(".").pop()?.toLowerCase();if(ext==="pdf")return"📕";if(["jpg","jpeg","png","gif","webp"].includes(ext))return"🖼️";if(["ai","eps"].includes(ext))return"🎨";return"📄";};
   const handleDrop=(e)=>{e.preventDefault();setDragOver(false);setFiles(p=>[...p,...Array.from(e.dataTransfer?.files||[])]);};
-  const handleAdd=()=>{
+  const handleAdd=async()=>{
     const cfgSummary={productId:prod.id,productName:prod.name,quantity:qty,selections:{...selections},selLabels:{}};
     (prod.optGroups||[]).forEach(g=>{const ch=g.choices.find(c=>c.id===selections[g.id]);if(ch)cfgSummary.selLabels[g.name]=ch.label;});
-    addToCart({id:uid(),cfg:{...cfgSummary,format:prod.name,printType:Object.values(cfgSummary.selLabels).slice(0,2).join("/"),binding:"-",pages:"-",innerPaper:"-",innerSide:"-",coverPaper:"-",coverSide:"-",coating:"-",endpaper:"-",postProcessing:[],quantity:qty},quote,files:files.map(f=>f.name),isCustom:true});
+    let fileData=[];
+    if(files.length>0&&supabase){
+      for(const f of files){const path=`${uid()}/${f.name}`;const{error}=await supabase.storage.from("order-files").upload(path,f);if(!error){const{data:u}=supabase.storage.from("order-files").getPublicUrl(path);fileData.push({name:f.name,url:u?.publicUrl||""});}else fileData.push({name:f.name,url:""});}
+    }else{fileData=files.map(f=>({name:f.name,url:""}));}
+    addToCart({id:uid(),cfg:{...cfgSummary,format:prod.name,printType:Object.values(cfgSummary.selLabels).slice(0,2).join("/"),binding:"-",pages:"-",innerPaper:"-",innerSide:"-",coverPaper:"-",coverSide:"-",coating:"-",endpaper:"-",postProcessing:[],quantity:qty},quote,files:fileData,isCustom:true});
     setToast("장바구니에 담겼습니다");setTimeout(()=>go("cart"),800);
   };
   if(!prod)return(<div className="min-h-screen flex items-center justify-center"><div className="text-center bg-white rounded-2xl shadow-sm p-10 max-w-sm"><div className="text-5xl mb-4">❓</div><h2 className="font-bold text-lg mb-2">상품을 찾을 수 없습니다</h2><p className="text-gray-400 text-sm mb-6">삭제되었거나 존재하지 않는 상품입니다</p><button onClick={()=>go("products")} className="px-6 py-2.5 rounded-xl font-bold text-white" style={{background:T.accent}}>상품 목록으로</button></div></div>);
@@ -1171,7 +1220,7 @@ function CompareModal({open,onClose,items}){if(!open||items.length<2)return null
 // MAIN APP
 // ═══════════════════════════════════════════════════
 export default function App(){
-  const[page,setPage]=useState("home");const[cart,setCart]=useState([]);const[orders,setOrders]=useState([]);const[pricing,setPricingS]=useState(DEF_PRICING);const[compList,setCompList]=useState([]);const[compOpen,setCompOpen]=useState(false);const[notifs,setNotifs]=useState([]);const[priceHistory,setPriceHistory]=useState([]);const[savedCfgs,setSavedCfgs]=useState([]);const[settings,setSettingsS]=useState({bizName:"(주)북모아",bizNo:"508-81-40669",tel:"1644-1814",fax:"02-2260-9090",email:"book@bookmoa.com",addr:"서울특별시 성동구 성수동2가 315-61 성수역 SK V1 Tower 706호",ceo:"김동명",taxRate:10,deliveryFee:0,deliveryDays:"3~5",memo:""});const[customProducts,setCustomProductsS]=useState([]);const[loaded,setLoaded]=useState(false);const[pageArg,setPageArg]=useState(null);
+  const[page,setPage]=useState("home");const[cart,setCart]=useState([]);const[orders,setOrders]=useState([]);const[pricing,setPricingS]=useState(DEF_PRICING);const[compList,setCompList]=useState([]);const[compOpen,setCompOpen]=useState(false);const[notifs,setNotifs]=useState([]);const[priceHistory,setPriceHistory]=useState([]);const[savedCfgs,setSavedCfgs]=useState([]);const[settings,setSettingsS]=useState({bizName:"(주)북모아",bizNo:"508-81-40669",tel:"1644-1814",fax:"02-2260-9090",email:"book@bookmoa.com",addr:"서울특별시 성동구 성수동2가 315-61 성수역 SK V1 Tower 706호",ceo:"김동명",taxRate:10,deliveryFee:0,deliveryDays:"3~5",memo:""});const[customProducts,setCustomProductsS]=useState([]);const[loaded,setLoaded]=useState(false);const[pageArg,setPageArg]=useState(null);const[session,setSession]=useState(null);
 
   useEffect(()=>{(async()=>{
     const c=await sLoad("p4-cart",[]);const o=await sLoad("p4-orders",[]);const p=await sLoad("p4-pricing",null);const n=await sLoad("p4-notifs",[]);const ph=await sLoad("p4-phist",[]);const sc=await sLoad("p4-saved",[]);const st=await sLoad("p4-settings",null);const cp=await sLoad("p4-cprods",[]);
@@ -1183,6 +1232,13 @@ export default function App(){
   useEffect(()=>{if(loaded)sSave("p4-phist",priceHistory);},[priceHistory,loaded]);
   useEffect(()=>{if(loaded)sSave("p4-saved",savedCfgs);},[savedCfgs,loaded]);
   useEffect(()=>{if(loaded)sSave("p4-cprods",customProducts);},[customProducts,loaded]);
+
+  useEffect(()=>{
+    if(!supabase)return;
+    supabase.auth.getSession().then(({data})=>setSession(data.session));
+    const{data:{subscription}}=supabase.auth.onAuthStateChange((_,s)=>setSession(s));
+    return()=>subscription.unsubscribe();
+  },[]);
 
   const go=useCallback((p,arg)=>{setPage(p);setPageArg(arg||null);window.scrollTo(0,0);},[]);
   const addToCart=useCallback(item=>setCart(p=>[...p,item]),[]);
@@ -1206,7 +1262,7 @@ export default function App(){
   const updateProduct=useCallback((id,upd)=>setCustomProductsS(p=>p.map(pr=>pr.id===id?{...pr,...upd,updatedAt:now()}:pr)),[]);
   const removeProduct=useCallback(id=>setCustomProductsS(p=>p.filter(pr=>pr.id!==id)),[]);
 
-  const ctx=useMemo(()=>({page,pageArg,go,cart,addToCart,removeCart,clearCart,updateCartItem,orders,addOrder,updateOrderStatus,pricing,setPricing,compareList:compList,addCompare,compareOpen:compOpen,setCompareOpen:setCompOpen,notifs,addNotif,markNotifsRead,priceHistory,addPriceHistory,savedCfgs,saveCfg,removeSavedCfg,settings,setSettings,resetOrders,resetNotifs,customProducts,setCustomProducts,addProduct,updateProduct,removeProduct}),[page,pageArg,go,cart,addToCart,removeCart,clearCart,updateCartItem,orders,addOrder,updateOrderStatus,pricing,setPricing,compList,addCompare,compOpen,notifs,addNotif,markNotifsRead,priceHistory,addPriceHistory,savedCfgs,saveCfg,removeSavedCfg,settings,setSettings,resetOrders,resetNotifs,customProducts,setCustomProducts,addProduct,updateProduct,removeProduct]);
+  const ctx=useMemo(()=>({page,pageArg,go,cart,addToCart,removeCart,clearCart,updateCartItem,orders,addOrder,updateOrderStatus,pricing,setPricing,compareList:compList,addCompare,compareOpen:compOpen,setCompareOpen:setCompOpen,notifs,addNotif,markNotifsRead,priceHistory,addPriceHistory,savedCfgs,saveCfg,removeSavedCfg,settings,setSettings,resetOrders,resetNotifs,customProducts,setCustomProducts,addProduct,updateProduct,removeProduct,session,setSession}),[page,pageArg,go,cart,addToCart,removeCart,clearCart,updateCartItem,orders,addOrder,updateOrderStatus,pricing,setPricing,compList,addCompare,compOpen,notifs,addNotif,markNotifsRead,priceHistory,addPriceHistory,savedCfgs,saveCfg,removeSavedCfg,settings,setSettings,resetOrders,resetNotifs,customProducts,setCustomProducts,addProduct,updateProduct,removeProduct,session,setSession]);
   const pages={home:Home,products:Products,configure:Configure,cart:Cart,checkout:Checkout,orderDone:OrderDone,orders:Orders,admin:Admin,prodConfigure:ProdConfigure};const Page=pages[page]||Home;
 
   return(<Ctx.Provider value={ctx}>
