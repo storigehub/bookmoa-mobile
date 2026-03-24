@@ -1,0 +1,25 @@
+{
+  "name": "bookmoa-printable",
+  "private": true,
+  "version": "1.0.0",
+  "description": "(주)북모아 디지털 인쇄 견적/주문 시스템",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "recharts": "^2.15.3",
+    "xlsx": "^0.18.5",
+    "@supabase/supabase-js": "^2.49.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^6.0.7",
+    "tailwindcss": "^4.1.3",
+    "@tailwindcss/vite": "^4.1.3"
+  }
+}
