@@ -383,20 +383,24 @@ function NotifDropdown({onClose}){
 // ═══════════════════════════════════════════════════
 function Home(){const{go,savedCfgs,orders,settings,customProducts}=useApp();const activeProds=customProducts.filter(p=>p.active);
 return(<div style={{background:T.bg}}>
-  {/* HERO - BookMoa style: bright gradient top */}
-  <section className="relative overflow-hidden" style={{background:"linear-gradient(180deg,#E8F5E9 0%,#F1F8E8 40%,#FFFFFF 100%)",minHeight:"85vh"}}>
+  {/* HERO - full-bleed photo background */}
+  <section className="relative overflow-hidden" style={{minHeight:"88vh"}}>
+    {/* Background photo */}
+    <div className="absolute inset-0" style={{backgroundImage:"url('https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?w=1920&q=80')",backgroundSize:"cover",backgroundPosition:"center"}}/>
+    {/* Overlay: dark olive gradient for brand consistency */}
+    <div className="absolute inset-0" style={{background:"linear-gradient(120deg,rgba(18,30,10,0.82) 0%,rgba(28,41,18,0.68) 45%,rgba(28,41,18,0.30) 100%)"}}/>
     <div className="max-w-7xl mx-auto px-6 pt-32 pb-16 relative z-10"><div className="grid lg:grid-cols-2 gap-12 items-center"><div className="fade-up">
-      <div className="inline-block px-4 py-1.5 rounded-full text-[11px] font-bold tracking-[2px] mb-6" style={{background:T.accentBg,color:T.accent,border:"1px solid "+T.accentBorder}}>DIGITAL PRINT ON DEMAND</div>
-      <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black leading-tight mb-6" style={{color:T.text}}>세상에 단 한 권뿐인<br/><span style={{color:T.accent}}>당신의 책</span></h1>
-      <p className="text-lg leading-relaxed max-w-lg mb-10 fade-up fade-up-d1" style={{color:T.sub}}>30년 전통의 북모아가 당신의 이야기를 아름다운 책으로 만들어드립니다.<br/>실시간 견적부터 주문까지, 한 번에.</p>
+      <div className="inline-block px-4 py-1.5 rounded-full text-[11px] font-bold tracking-[2px] mb-6" style={{background:"rgba(124,179,66,0.18)",color:"#A5D26A",border:"1px solid rgba(124,179,66,0.35)"}}>DIGITAL PRINT ON DEMAND</div>
+      <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black leading-tight mb-6" style={{color:"#F5F5F0"}}>세상에 단 한 권뿐인<br/><span style={{color:T.accent}}>당신의 책</span></h1>
+      <p className="text-lg leading-relaxed max-w-lg mb-10 fade-up fade-up-d1" style={{color:"rgba(245,245,240,0.72)"}}>30년 전통의 북모아가 당신의 이야기를 아름다운 책으로 만들어드립니다.<br/>실시간 견적부터 주문까지, 한 번에.</p>
       <div className="flex flex-wrap gap-4 fade-up fade-up-d2">
-        <button onClick={()=>go("configure")} className="px-8 py-4 rounded-full font-bold text-base text-white transition-all hover:-translate-y-0.5" style={{background:T.accent,boxShadow:"0 4px 16px rgba(124,179,66,.3)"}}>견적 시작하기 →</button>
-        <button onClick={()=>go("products")} className="px-8 py-4 rounded-full font-bold text-base border-2 transition-all hover:-translate-y-0.5" style={{color:T.sub,borderColor:T.border}}>상품 둘러보기</button>
+        <button onClick={()=>go("configure")} className="px-8 py-4 rounded-full font-bold text-base text-white transition-all hover:-translate-y-0.5" style={{background:T.accent,boxShadow:"0 4px 20px rgba(124,179,66,.45)"}}>견적 시작하기 →</button>
+        <button onClick={()=>go("products")} className="px-8 py-4 rounded-full font-bold text-base border-2 transition-all hover:-translate-y-0.5" style={{color:"rgba(245,245,240,0.85)",borderColor:"rgba(245,245,240,0.35)"}}>상품 둘러보기</button>
       </div></div>
-      <div className="hidden lg:flex justify-center fade-up fade-up-d2"><div className="w-80 rounded-xl overflow-hidden" style={{background:T.card,border:"1px solid "+T.border,boxShadow:T.shLg}}>
+      <div className="hidden lg:flex justify-center fade-up fade-up-d2"><div className="w-80 rounded-2xl overflow-hidden" style={{background:"rgba(255,255,255,0.10)",backdropFilter:"blur(16px)",border:"1px solid rgba(255,255,255,0.18)",boxShadow:"0 8px 32px rgba(0,0,0,0.25)"}}>
         <div className="p-6"><div className="text-[11px] mb-4 font-bold tracking-[2px]" style={{color:T.accent}}>실시간 견적 미리보기</div>
-        {[["판형","A4"],["인쇄","FX-4도"],["내지","모조80 양면"],["표지","아트지250"],["제본","무선"]].map(([k,v])=>(<div key={k} className="flex justify-between py-1.5 text-sm" style={{borderBottom:"1px solid "+T.borderLight}}><span style={{color:T.muted}}>{k}</span><span className="font-medium" style={{color:T.text}}>{v}</span></div>))}
-        <div className="mt-4 pt-4 flex justify-between items-center"><span className="text-sm" style={{color:T.muted}}>100p / 1부</span><span className="text-2xl font-black" style={{color:T.accent}}>₩ {fmt(calcQuote(DEF_CFG).total)}</span></div></div></div></div>
+        {[["판형","A4"],["인쇄","FX-4도"],["내지","모조80 양면"],["표지","아트지250"],["제본","무선"]].map(([k,v])=>(<div key={k} className="flex justify-between py-1.5 text-sm" style={{borderBottom:"1px solid rgba(255,255,255,0.12)"}}><span style={{color:"rgba(245,245,240,0.55)"}}>{k}</span><span className="font-medium" style={{color:"rgba(245,245,240,0.9)"}}>{v}</span></div>))}
+        <div className="mt-4 pt-4 flex justify-between items-center"><span className="text-sm" style={{color:"rgba(245,245,240,0.5)"}}>100p / 1부</span><span className="text-2xl font-black" style={{color:T.accent}}>₩ {fmt(calcQuote(DEF_CFG).total)}</span></div></div></div></div>
     </div></div>
   </section>
 
