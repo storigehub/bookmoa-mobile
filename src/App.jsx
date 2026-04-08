@@ -151,8 +151,9 @@ function lookupLE(val,rows,key){let r=rows[0];for(const row of rows){if(row[key]
  *  8. 후가공  = postProc 단가 합산
  *  → 단가 합 × 부수 = 공급가액, ×10% = 부가세
  */
-function calcQuote(cfg,pricing=DEF_PRICING){
+function calcQuote(cfg,pricing=DEF_PRICING,options={}){
   const p=pricing;
+  const useInnerPaperCost=options.useInnerPaperCost!==false;
   const{format,pages,quantity,printType,innerPaper,innerSide,coverPaper,coverSide,coating,binding,endpaper,postProcessing=[]}=cfg;
   const lines=[];
 
@@ -164,13 +165,18 @@ function calcQuote(cfg,pricing=DEF_PRICING){
   const pu=ptIdx>=0?(pRow.v[ptIdx]??0):0;              // v[idx]=해당 인쇄방식 원/p
   lines.push({key:"print",label:"인쇄비",unit:pu,qty:pages,total:pu*pages,desc:printType+" × "+pages+"p"});
 
-  // 2. 내지 종이비: innerPapers[종이명][절수] → 1장 단가, 양면이면 ÷2
-  // 절수(innerSize)는 판형별로 다름: B6=32절, A5=국16절, B5=16절, A4=국8절
-  // 양면: 한 장 양쪽에 인쇄 → 1장 = 2페이지 → 페이지당 단가 = 장 단가 ÷ 2
+  // 2. 내지 종이비: 설정(useInnerPaperCost)에 따라 계산 방식 선택
+  //    - true : innerPapers[종이명][절수] 기반 (양면이면 ÷2)
+  //    - false: sideRate(단/양면 고정 단가) 기반
   const innerSize = p.formatMap[format]?.innerSize ?? "국8절";
   const leafCost = (p.innerPapers[innerPaper] ?? {})[innerSize] ?? 0;
-  const sr = innerSide === "양면" ? leafCost / 2 : leafCost;
-  lines.push({key:"inner",label:"내지("+innerPaper+")",unit:sr,qty:pages,total:sr*pages,desc:innerSide+" "+innerSize+" "+sr.toFixed(3)+"원/p"});
+  const sr = useInnerPaperCost
+    ? (innerSide === "양면" ? leafCost / 2 : leafCost)
+    : (p.sideRate[innerSide] ?? 6.2);
+  const innerDesc = useInnerPaperCost
+    ? (innerSide+" "+innerSize+" "+sr.toFixed(3)+"원/p")
+    : (innerSide+" sideRate "+sr.toFixed(3)+"원/p");
+  lines.push({key:"inner",label:"내지("+innerPaper+")",unit:sr,qty:pages,total:sr*pages,desc:innerDesc});
 
   // 3. 면지비: 판형별 고정 단가 (양장 등에서 앞뒤 속지 사용)
   const ep=p.endpapers[endpaper]?.[format]??0;
@@ -483,7 +489,7 @@ function NotifDropdown({onClose}){
 // ═══════════════════════════════════════════════════
 // HOME / LANDING PAGE
 // ═══════════════════════════════════════════════════
-function Home(){const{go,savedCfgs,orders,settings,customProducts}=useApp();const activeProds=customProducts.filter(p=>p.active);
+function Home(){const{go,savedCfgs,orders,settings,customProducts}=useApp();const activeProds=customProducts.filter(p=>p.active);const useInnerPaperCost=settings?.useInnerPaperCost!==false;
 return(<div style={{background:T.bg}}>
   {/* HERO - full-bleed photo background */}
   <section className="relative overflow-hidden" style={{minHeight:"88vh"}}>
@@ -502,7 +508,7 @@ return(<div style={{background:T.bg}}>
       <div className="hidden lg:flex justify-center fade-up fade-up-d2"><div className="w-80 rounded-2xl overflow-hidden" style={{background:"rgba(255,255,255,0.10)",backdropFilter:"blur(16px)",border:"1px solid rgba(255,255,255,0.18)",boxShadow:"0 8px 32px rgba(0,0,0,0.25)"}}>
         <div className="p-6"><div className="text-[11px] mb-4 font-bold tracking-[2px]" style={{color:T.accent}}>실시간 견적 미리보기</div>
         {[["판형","A4"],["인쇄","FX-4도"],["내지","모조80 양면"],["표지","아트지250"],["제본","무선"]].map(([k,v])=>(<div key={k} className="flex justify-between py-1.5 text-sm" style={{borderBottom:"1px solid rgba(255,255,255,0.12)"}}><span style={{color:"rgba(245,245,240,0.55)"}}>{k}</span><span className="font-medium" style={{color:"rgba(245,245,240,0.9)"}}>{v}</span></div>))}
-        <div className="mt-4 pt-4 flex justify-between items-center"><span className="text-sm" style={{color:"rgba(245,245,240,0.5)"}}>100p / 1부</span><span className="text-2xl font-black" style={{color:T.accent}}>₩ {fmt(calcQuote(DEF_CFG).total)}</span></div></div></div></div>
+        <div className="mt-4 pt-4 flex justify-between items-center"><span className="text-sm" style={{color:"rgba(245,245,240,0.5)"}}>100p / 1부</span><span className="text-2xl font-black" style={{color:T.accent}}>₩ {fmt(calcQuote(DEF_CFG,DEF_PRICING,{useInnerPaperCost}).total)}</span></div></div></div></div>
     </div></div>
   </section>
 
@@ -573,7 +579,7 @@ function Products(){const{go,customProducts}=useApp();const activeProds=customPr
 function Configure(){
   const{go,addToCart,addCompare,savedCfgs,saveCfg,removeSavedCfg,settings}=useApp();
   const[cfg,setCfg]=useState({...DEF_CFG});const[step,setStep]=useState(0);const[files,setFiles]=useState([]);const[toast,setToast]=useState(null);const[mobPrice,setMobPrice]=useState(false);const[showEstimate,setShowEstimate]=useState(false);const[showSaved,setShowSaved]=useState(false);const[dragOver,setDragOver]=useState(false);const[saveName,setSaveName]=useState("");
-  const set=(k,v)=>setCfg(p=>({...p,[k]:v}));const quote=useMemo(()=>calcQuote(cfg),[cfg]);
+  const set=(k,v)=>setCfg(p=>({...p,[k]:v}));const quote=useMemo(()=>calcQuote(cfg,DEF_PRICING,{useInnerPaperCost:settings?.useInnerPaperCost!==false}),[cfg,settings?.useInnerPaperCost]);
   const innerPaperType=useMemo(()=>(cfg.innerPaper||"").match(/^(.*?)(\d+)$/)?.[1]||PAPER_TYPES[0],[cfg.innerPaper]);
   const printAvail=useMemo(()=>PTYPES.map((pt,i)=>{const r=lookupLE(cfg.pages,DEF_PRICING.printTable,"c");return r.v[i]!=null;}),[cfg.pages]);
   const togglePP=pp=>setCfg(p=>({...p,postProcessing:p.postProcessing.includes(pp)?p.postProcessing.filter(x=>x!==pp):[...p.postProcessing,pp]}));
@@ -849,8 +855,8 @@ function EstimateModal({cfg,quote,onClose}){
 // ═══════════════════════════════════════════════════
 // CART
 // ═══════════════════════════════════════════════════
-function Cart(){const{go,cart,removeCart,updateCartItem,customProducts}=useApp();const total=cart.reduce((s,i)=>s+i.quote.total,0);
-const updateQty=(id,newQty)=>{const item=cart.find(i=>i.id===id);if(!item)return;const newCfg={...item.cfg,quantity:newQty};let newQuote;if(item.isCustom){const prod=customProducts.find(p=>p.id===item.cfg.productId);newQuote=calcCustomQuote(prod,item.cfg.selections,newQty);}else{newQuote=calcQuote(newCfg);}updateCartItem(id,{cfg:newCfg,quote:newQuote});};
+function Cart(){const{go,cart,removeCart,updateCartItem,customProducts,settings}=useApp();const total=cart.reduce((s,i)=>s+i.quote.total,0);
+const updateQty=(id,newQty)=>{const item=cart.find(i=>i.id===id);if(!item)return;const newCfg={...item.cfg,quantity:newQty};let newQuote;if(item.isCustom){const prod=customProducts.find(p=>p.id===item.cfg.productId);newQuote=calcCustomQuote(prod,item.cfg.selections,newQty);}else{newQuote=calcQuote(newCfg,DEF_PRICING,{useInnerPaperCost:settings?.useInnerPaperCost!==false});}updateCartItem(id,{cfg:newCfg,quote:newQuote});};
 const itemLabel=(item)=>{if(item.isCustom){const labels=item.cfg.selLabels?Object.values(item.cfg.selLabels).join(" / "):"";return{title:item.cfg.productName||"커스텀 상품",sub:labels,pages:"-"};}return{title:"인쇄물",sub:item.cfg.format+"/"+item.cfg.printType+"/"+item.cfg.innerPaper+"/"+item.cfg.binding,pages:item.cfg.pages+"p"};};
 if(!cart.length)return(<div className="min-h-screen flex items-center justify-center pt-16"><div className="text-center"><div className="text-6xl mb-4">🛒</div><h2 className="text-2xl font-bold mb-2">장바구니가 비어있습니다</h2><div className="flex gap-3 mt-4"><button onClick={()=>go("configure")} className="px-6 py-3 rounded-xl font-bold text-white" style={{background:T.accent}}>도서 견적</button><button onClick={()=>go("products")} className="px-6 py-3 rounded-xl font-bold border-2 border-gray-200">상품 둘러보기</button></div></div></div>);
 return(<div className="min-h-screen" style={{background:T.warm}}><div className="bg-white border-b"><div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between"><button onClick={()=>go("home")} className="flex items-center gap-1 text-gray-500 text-sm">{II.back(18)} 홈</button><h1 className="font-black text-lg" style={{color:T.accent}}>장바구니 ({cart.length})</h1><div className="w-16"/></div></div>
@@ -875,8 +881,8 @@ function OrderDone(){const{go,orders}=useApp();const last=orders[orders.length-1
 // ═══════════════════════════════════════════════════
 // ORDERS PAGE
 // ═══════════════════════════════════════════════════
-function Orders(){const{go,orders,addToCart,addNotif,customProducts}=useApp();const[sel,setSel]=useState(null);const[toast,setToast]=useState(null);const[showReceipt,setShowReceipt]=useState(null);
-const reorder=(o)=>{o.items?.forEach(item=>{let q;if(item.isCustom||item.cfg?.productId){const prod=customProducts.find(p=>p.id===item.cfg.productId);q=calcCustomQuote(prod,item.cfg.selections,item.cfg.quantity);addToCart({id:uid(),cfg:{...item.cfg},quote:q,files:[],isCustom:true});}else{q=calcQuote(item.cfg);addToCart({id:uid(),cfg:{...item.cfg},quote:q,files:[]});}});addNotif({icon:"🔄",title:"재주문",body:o.id+" 상품이 장바구니에 담겼습니다",date:now()});setToast("장바구니에 담겼습니다");setTimeout(()=>go("cart"),1000);};
+function Orders(){const{go,orders,addToCart,addNotif,customProducts,settings}=useApp();const[sel,setSel]=useState(null);const[toast,setToast]=useState(null);const[showReceipt,setShowReceipt]=useState(null);
+const reorder=(o)=>{o.items?.forEach(item=>{let q;if(item.isCustom||item.cfg?.productId){const prod=customProducts.find(p=>p.id===item.cfg.productId);q=calcCustomQuote(prod,item.cfg.selections,item.cfg.quantity);addToCart({id:uid(),cfg:{...item.cfg},quote:q,files:[],isCustom:true});}else{q=calcQuote(item.cfg,DEF_PRICING,{useInnerPaperCost:settings?.useInnerPaperCost!==false});addToCart({id:uid(),cfg:{...item.cfg},quote:q,files:[]});}});addNotif({icon:"🔄",title:"재주문",body:o.id+" 상품이 장바구니에 담겼습니다",date:now()});setToast("장바구니에 담겼습니다");setTimeout(()=>go("cart"),1000);};
 const itemDesc=(item)=>{if(item.isCustom||item.cfg?.productId){const labels=item.cfg.selLabels?Object.entries(item.cfg.selLabels).map(([k,v])=>v).join("/"):"";return{name:item.cfg.productName||"커스텀",spec:labels,pages:"",qty:item.cfg.quantity+"부"};}return{name:item.cfg.format+"/"+item.cfg.printType+"/"+item.cfg.innerPaper,spec:"",pages:item.cfg.pages+"p",qty:item.cfg.quantity+"부"};};
 if(sel!==null){const o=orders[sel];if(!o){setSel(null);return null;}return(<div className="min-h-screen" style={{background:T.warm}}><div className="bg-white border-b"><div className="max-w-3xl mx-auto px-4 h-14 flex items-center"><button onClick={()=>setSel(null)} className="flex items-center gap-1 text-gray-500 text-sm">{II.back(18)} 목록</button></div></div><div className="max-w-3xl mx-auto px-4 py-6"><div className="bg-white rounded-xl shadow-sm p-6"><div className="flex justify-between items-start mb-6"><div><h2 className="text-xl font-black">{o.id}</h2><p className="text-gray-400 text-sm">{dateStr(o.date)}</p></div><div className="text-2xl font-black" style={{color:T.accent}}>₩{fmt(o.total)}</div></div>{o.items?.map((item,i)=>{const d=itemDesc(item);return(<div key={i} className="p-3 bg-gray-50 rounded-xl mb-2 text-sm">{(item.isCustom||item.cfg?.productId)&&<span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded mr-1">커스텀</span>}<div className="font-bold">#{i+1}: {d.name}</div>{d.spec&&<div className="text-gray-400 text-xs">{d.spec}</div>}<div className="text-gray-500">{d.pages?d.pages+" × ":""}{d.qty} = ₩{fmt(item.quote.total)}</div></div>);})}<h3 className="font-bold text-lg mt-6 mb-4">제작 공정</h3>{STS.map((s,i)=>(<div key={s.key} className="flex items-start gap-3 mb-4"><div className="flex flex-col items-center"><div className={cn("w-9 h-9 rounded-full flex items-center justify-center text-sm z-10",i<=o.status?"bg-green-100":"bg-gray-100")}>{i<o.status?"✅":s.icon}</div>{i<STS.length-1&&<div className={cn("w-0.5 h-6 mt-0.5",i<o.status?"bg-green-300":"bg-gray-200")}/>}</div><div className="pt-1.5"><div className={cn("font-bold text-sm",i<=o.status?"text-gray-900":"text-gray-400")}>{s.label}</div>{i===o.status&&<div className="text-xs text-green-600 font-medium">진행 중</div>}</div></div>))}{o.history?.length>0&&<div className="mt-6 pt-4 border-t"><h4 className="font-bold text-sm mb-2">이력</h4>{o.history.map((h,i)=><div key={i} className="text-xs text-gray-500 py-0.5">{dateStr(h.date)} — {h.note}</div>)}</div>}<div className="mt-6 pt-4 border-t flex gap-2"><button onClick={()=>reorder(o)} className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 border-green-500 text-green-700 hover:bg-green-50">🔄 재주문</button><button onClick={()=>setShowReceipt(o)} className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 border-gray-200 text-gray-600 hover:bg-gray-50">🧾 주문확인서</button></div></div></div></div>);}
 return(<div className="min-h-screen" style={{background:T.warm}}><div className="bg-white border-b"><div className="max-w-3xl mx-auto px-4 h-14 flex items-center justify-between"><button onClick={()=>go("home")} className="flex items-center gap-1 text-gray-500 text-sm">{II.back(18)} 홈</button><h1 className="font-black text-lg" style={{color:T.accent}}>내 주문 ({orders.length})</h1><div className="w-16"/></div></div><div className="max-w-3xl mx-auto px-4 py-6 space-y-3">{!orders.length&&<div className="text-center py-20 text-gray-400">주문 내역이 없습니다</div>}{orders.map((o,i)=>(<button key={o.id} onClick={()=>setSel(i)} className="w-full bg-white rounded-xl shadow-sm p-5 text-left hover:shadow-md transition-all"><div className="flex justify-between items-start mb-2"><div><span className="font-bold">{o.id}</span><span className="text-gray-400 text-sm ml-2">{dateStr(o.date)}</span></div><Badge color={o.status>=6?"green":"amber"}>{STS[o.status]?.label}</Badge></div>{o.items?.map((item,j)=>{const d=itemDesc(item);return <p key={j} className="text-xs text-gray-500">{(item.isCustom||item.cfg?.productId)?"🏷️ ":""}{d.name} {d.pages?d.pages+"×":"×"}{d.qty}</p>;})}<div className="flex justify-between items-center mt-2"><span className="text-xs text-gray-400">{o.items?.length}건</span><span className="font-bold text-lg" style={{color:T.accent}}>₩{fmt(o.total)}</span></div></button>))}</div>{showReceipt&&<ReceiptModal order={showReceipt} onClose={()=>setShowReceipt(null)}/>}{toast&&<Toast msg={toast} onClose={()=>setToast(null)}/>}</div>);}
@@ -1204,6 +1210,14 @@ function Admin(){
         <div><label className="block text-xs font-bold text-gray-500 mb-1">부가세율 (%)</label><input type="number" value={settings.taxRate} onChange={e=>setSettings({...settings,taxRate:parseFloat(e.target.value)||0})} className="w-full h-10 px-3 border border-gray-200 rounded-lg text-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-200"/></div>
         <div><label className="block text-xs font-bold text-gray-500 mb-1">기본 배송비 (원)</label><input type="number" value={settings.deliveryFee} onChange={e=>setSettings({...settings,deliveryFee:parseInt(e.target.value)||0})} className="w-full h-10 px-3 border border-gray-200 rounded-lg text-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-200"/></div>
         <div><label className="block text-xs font-bold text-gray-500 mb-1">예상 납기 (영업일)</label><input value={settings.deliveryDays||""} onChange={e=>setSettings({...settings,deliveryDays:e.target.value})} placeholder="3~5" className="w-full h-10 px-3 border border-gray-200 rounded-lg text-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-200"/></div>
+        <label className="sm:col-span-2 flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={settings.useInnerPaperCost!==false}
+            onChange={e=>setSettings({...settings,useInnerPaperCost:e.target.checked})}
+          />
+          내지 단가를 종이별 가격표(`innerPapers`)로 계산 (OFF 시 `sideRate` 고정 단가 사용)
+        </label>
       </div>
     </div>
     <div className="bg-white rounded-xl shadow-sm p-6"><h3 className="font-bold text-lg mb-5">견적서 메모</h3>
@@ -1428,7 +1442,7 @@ function CompareModal({open,onClose,items}){if(!open||items.length<2)return null
 // MAIN APP
 // ═══════════════════════════════════════════════════
 export default function App(){
-  const[page,setPage]=useState("home");const[cart,setCart]=useState([]);const[orders,setOrders]=useState([]);const[pricing,setPricingS]=useState(DEF_PRICING);const[compList,setCompList]=useState([]);const[compOpen,setCompOpen]=useState(false);const[notifs,setNotifs]=useState([]);const[priceHistory,setPriceHistory]=useState([]);const[savedCfgs,setSavedCfgs]=useState([]);const[settings,setSettingsS]=useState({bizName:"(주)북모아",bizNo:"508-81-40669",tel:"1644-1814",fax:"02-2260-9090",email:"book@bookmoa.com",addr:"서울특별시 성동구 성수동2가 315-61 성수역 SK V1 Tower 706호",ceo:"김동명",taxRate:10,deliveryFee:0,deliveryDays:"3~5",memo:""});const[customProducts,setCustomProductsS]=useState([]);const[loaded,setLoaded]=useState(false);const[pageArg,setPageArg]=useState(null);const[session,setSession]=useState(null);
+  const[page,setPage]=useState("home");const[cart,setCart]=useState([]);const[orders,setOrders]=useState([]);const[pricing,setPricingS]=useState(DEF_PRICING);const[compList,setCompList]=useState([]);const[compOpen,setCompOpen]=useState(false);const[notifs,setNotifs]=useState([]);const[priceHistory,setPriceHistory]=useState([]);const[savedCfgs,setSavedCfgs]=useState([]);const[settings,setSettingsS]=useState({bizName:"(주)북모아",bizNo:"508-81-40669",tel:"1644-1814",fax:"02-2260-9090",email:"book@bookmoa.com",addr:"서울특별시 성동구 성수동2가 315-61 성수역 SK V1 Tower 706호",ceo:"김동명",taxRate:10,deliveryFee:0,deliveryDays:"3~5",memo:"",useInnerPaperCost:true});const[customProducts,setCustomProductsS]=useState([]);const[loaded,setLoaded]=useState(false);const[pageArg,setPageArg]=useState(null);const[session,setSession]=useState(null);
 
   /**
    * [DB 초기 로드] 앱 마운트 시 스토리지에서 전체 상태 일괄 로드

@@ -60,6 +60,11 @@ bookmoa-printable/
     └── migration.sql   # DB 스키마 (Stage 2)
 ```
 
+## 문서
+
+- [개발 이력 및 아키텍처](./docs/DEVELOPMENT.md)
+- [견적 기본 계산 로직 설명](./docs/기본계산로직%20설명.md)
+
 ## 라이선스
 
 © 2025 (주)북모아. All rights reserved.
