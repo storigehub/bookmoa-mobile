@@ -31,11 +31,21 @@ npm run preview    # 빌드 미리보기
 
 ## 파일 구조
 ```
-src/App.jsx           # 메인 앱 (전체 컴포넌트, ~1290줄)
-src/lib/storage.js    # 스토리지 추상화 (localStorage ↔ Supabase)
-src/lib/supabase.js   # Supabase 클라이언트
+src/App.jsx            # 메인 앱 (전체 컴포넌트, ~1500줄)
+src/lib/storage.js     # 스토리지 추상화 (localStorage ↔ Supabase)
+src/lib/supabase.js    # Supabase 클라이언트
 supabase/migration.sql # DB 스키마 (Stage 1)
-docs/                 # 개발 문서
+docs/                  # 개발 문서
+  DEVELOPMENT.md         # 개발 히스토리 & 아키텍처
+  DATABASE.md            # DB 스키마 상세
+  design-guide.md        # 디자인 시스템 가이드
+  php-porting-calc-logic.md      # 견적 계산 PHP 포팅 가이드
+  php-porting-order-screen.md    # 주문/견적 화면 PHP 포팅 가이드
+  migration-supabase-to-php-mariadb.md  # Supabase→PHP+MariaDB 마이그레이션 가이드
+docs2/                 # PHP+MariaDB 전환 실무 문서 (Cursor AI 작성)
+  mariadb_이관_스키마.sql
+  mariadb_초기데이터_적재_템플릿.sql
+  generate_full_insert_from_p4_pricing.php
 ```
 
 ## 아키텍처 핵심
@@ -106,11 +116,28 @@ docs/                 # 개발 문서
 - handleAdd (Configure, ProdConfigure): async 함수, 파일 업로드 후 장바구니 추가
 
 ## 향후 개발 계획 (TODO)
+
+### React/Supabase 현재 버전
 - [x] Supabase DB 연동 (Stage 2 완료)
 - [x] Supabase Auth 관리자 로그인 (Stage 3 완료)
 - [x] RLS 정책 적용 (Stage 2 완료)
 - [x] 파일 업로드 — Supabase Storage (Stage 4 완료)
+- [x] 가격 엔진 버그 수정 — innerPaper 반영, 전체카운터, 코팅/표지 절수 (2026-04-08)
+- [x] useInnerPaperCost 설정 ON/OFF 토글 (2026-04-08)
 - [ ] 컴포넌트 파일 분리 (App.jsx → 개별 파일)
 - [ ] 주문 알림 (이메일/카카오톡) — Resend API 활용 가능
 - [ ] 결제 연동 (토스페이먼츠 등)
 - [ ] 관리자 비밀번호 변경 UI
+
+### PHP+MariaDB 마이그레이션 (준비 완료 — 구현 대기)
+- [x] 마이그레이션 설계 문서 작성 (`docs/migration-supabase-to-php-mariadb.md`)
+- [x] 견적 계산 로직 PHP 포팅 문서 (`docs/php-porting-calc-logic.md`)
+- [x] 주문/견적 화면 PHP 포팅 문서 (`docs/php-porting-order-screen.md`)
+- [x] MariaDB 스키마 SQL (`docs2/mariadb_이관_스키마.sql`)
+- [x] 초기 데이터 적재 템플릿 (`docs2/mariadb_초기데이터_적재_템플릿.sql`)
+- [x] p4-pricing JSON → SQL 변환기 (`docs2/generate_full_insert_from_p4_pricing.php`)
+- [ ] PHP BookmoaPricing.php 구현 및 단위 테스트
+- [ ] PHP REST API 구현 (quote, cart, orders, upload)
+- [ ] MariaDB 서버 구축 및 데이터 이관
+- [ ] 프론트엔드 스토리지 레이어 교체 (Supabase → PHP API)
+- [ ] 스테이징 환경 검증 및 컷오버
