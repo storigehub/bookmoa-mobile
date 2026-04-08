@@ -42,7 +42,10 @@ const dateStr = d => (d||"").slice(0,10);
 // PRICING DATA (Excel transplant - complete)
 // ═══════════════════════════════════════════════════
 const DEF_PRICING = {
-  formatMap:{ B6:{innerSize:"국8절",coverSize:"국4절",desc:"128×182mm"}, A5:{innerSize:"국8절",coverSize:"국4절",desc:"148×210mm"}, B5:{innerSize:"국8절",coverSize:"국4절",desc:"182×257mm"}, A4:{innerSize:"국8절",coverSize:"국4절",desc:"210×297mm"} },
+  // innerSize: 해당 판형의 내지 1장 단위 (innerPapers 조회 키)
+  // B6=32절(46판기준), A5=국16절(국판기준), B5=16절(46판기준), A4=국8절(국판기준)
+  // coverSize: 기본 표지 절수 (무선날개/양장 바인딩 시 A5~A4는 calcQuote에서 3절로 오버라이드)
+  formatMap:{ B6:{innerSize:"32절",coverSize:"국4절",desc:"128×182mm"}, A5:{innerSize:"국16절",coverSize:"국4절",desc:"148×210mm"}, B5:{innerSize:"16절",coverSize:"국4절",desc:"182×257mm"}, A4:{innerSize:"국8절",coverSize:"국4절",desc:"210×297mm"} },
   printTypes:["IX-Eco","IX-Sta","IX-Pre","FX-4도","FX-2도","FX-1도","TO-4도","TO-1도"],
   printTable:[
     {c:0,v:[200,200,300,null,null,null,200,50]},{c:500,v:[150,150,250,null,null,null,150,30]},{c:1000,v:[100,100,150,null,null,null,100,25]},
@@ -50,6 +53,7 @@ const DEF_PRICING = {
     {c:8000,v:[35,40,70,35,21,14,40,17]},{c:10000,v:[30,35,60,30,18,13,40,16]},{c:20000,v:[25,30,50,25,15,12,40,15]},
     {c:30000,v:[20,25,40,20,12,11,40,14]},{c:50000,v:[15,20,30,15,9,10,40,13]},{c:80000,v:[15,20,25,15,9,9,40,12]},{c:100000,v:[15,20,25,15,9,9,40,11]}
   ],
+  // sideRate: 참고용 보존 (calcQuote는 innerPapers 직접 조회로 교체됨 — 하단 calcQuote 참고)
   sideRate:{단면:12.4,양면:6.2}, coverPrintRate:{단면:200,양면:400},
   paperSizes:["46판","3절","8절","16절","32절","국판","국4절","국8절","국16절"],
   innerPapers:{
@@ -100,7 +104,9 @@ const DEF_PRICING = {
     "아르떼(NW)310":{"46판":489710,"3절":326.473,"8절":122.428,"16절":61.214,"32절":42.523,"국판":340180,"국4절":170.09,"국8절":85.045,"국16절":42.523}
   },
   coverPapers:{ 아트지250:{국4절:77.735,"3절":149.207}, 아트지300:{국4절:93.285,"3절":179.053}, 스노우지250:{국4절:77.735,"3절":149.207}, 스노우지300:{국4절:93.285,"3절":179.053}, "아르떼(UW)190":{국4절:104.25,"3절":200.093}, "아르떼(UW)210":{국4절:115.22,"3절":221.16}, "아르떼(UW)230":{국4절:126.195,"3절":242.22}, "아르떼(UW)310":{국4절:170.09,"3절":326.473}, "아르떼(NW)190":{국4절:104.25,"3절":200.093}, "아르떼(NW)210":{국4절:115.22,"3절":221.16}, "아르떼(NW)230":{국4절:126.195,"3절":242.22}, "아르떼(NW)310":{국4절:170.09,"3절":326.473} },
-  coatingTable:{ B6:{없음:0,유광코팅:150,무광코팅:250}, A5:{없음:0,유광코팅:150,무광코팅:250}, B5:{없음:0,유광코팅:150,무광코팅:250}, A4:{없음:0,유광코팅:150,무광코팅:250} },
+  // coatingTable: 표지 절수 기준으로 인덱싱 (커버 크기에 따라 단가 다름)
+  // 국4절 커버: 유광100/무광200, 3절 커버: 유광150/무광250
+  coatingTable:{ "국4절":{없음:0,유광코팅:100,무광코팅:200}, "3절":{없음:0,유광코팅:150,무광코팅:250} },
   bindingTypes:["무선","무선날개","중철","스프링(PP제외)","스프링(PP포함)","양장"],
   bindingTable:[
     {q:0,v:[3000,3600,1000,3000,3300,6000]},{q:12,v:[1800,2400,800,1800,2100,6000]},{q:32,v:[1500,2100,800,1500,1800,6000]},
@@ -115,49 +121,145 @@ const DEF_PRICING = {
 // ═══════════════════════════════════════════════════
 // PRICING ENGINE v2
 // ═══════════════════════════════════════════════════
+
+/**
+ * lookupLE — 단계별 요금 테이블에서 val 이하인 가장 큰 구간 row를 반환
+ * (Less-than-or-Equal step lookup)
+ * 예: pages=150 → printTable에서 c=100 행 반환
+ */
 function lookupLE(val,rows,key){let r=rows[0];for(const row of rows){if(row[key]<=val)r=row;else break;}return r;}
 
+/**
+ * calcQuote — 일반 책자 견적 계산 (핵심 가격 엔진)
+ *
+ * 반환값: { unitPrice, subtotal, vat, total, lines, quantity }
+ *  - unitPrice: 1부당 단가 (원)
+ *  - subtotal : unitPrice × quantity (VAT 미포함)
+ *  - vat      : subtotal × 10%
+ *  - total    : subtotal + vat
+ *  - lines    : 항목별 세부 내역 배열 (견적서 출력용)
+ *
+ * 계산 순서:
+ *  1. 인쇄비  = 인쇄단가(전체카운터=페이지×부수 기준 구간 조회) × 페이지수
+ *  2. 내지비  = innerPapers[innerPaper][innerSize(절수)] / (양면이면 ÷2) × 페이지수
+ *             절수: B6=32절, A5=국16절, B5=16절, A4=국8절
+ *  3. 면지비  = endpapers[endpaper][format] (부당 고정)
+ *  4. 표지지비 = coverPapers[coverPaper][coverSize] (무선날개/양장+A5~A4 → 3절, 나머지 → 국4절)
+ *  5. 표지인쇄 = coverPrintRate[coverSide] (단면200/양면400 원)
+ *  6. 코팅비  = coatingTable[coverSize][coating] (국4절: 유광100/무광200, 3절: 유광150/무광250)
+ *  7. 제본비  = bindingTable 계단식 (부수 구간 × 제본방식)
+ *  8. 후가공  = postProc 단가 합산
+ *  → 단가 합 × 부수 = 공급가액, ×10% = 부가세
+ */
 function calcQuote(cfg,pricing=DEF_PRICING){
-  const p=pricing;const{format,pages,quantity,printType,innerPaper,innerSide,coverPaper,coverSide,coating,binding,endpaper,postProcessing=[]}=cfg;const lines=[];
-  const ptIdx=p.printTypes.indexOf(printType);const pRow=lookupLE(pages,p.printTable,"c");const pu=ptIdx>=0?(pRow.v[ptIdx]??0):0;
+  const p=pricing;
+  const{format,pages,quantity,printType,innerPaper,innerSide,coverPaper,coverSide,coating,binding,endpaper,postProcessing=[]}=cfg;
+  const lines=[];
+
+  // 1. 인쇄비: printTable 구간은 '전체카운터'(페이지 × 부수) 기준으로 조회
+  // 예) 2001p × 10부 = 20010 → c=20000 구간 → IX-Eco 25원/p
+  // (단가는 1부 기준: rate × pages, 총 인쇄비는 × quantity는 나중에 subtotal에서 처리)
+  const ptIdx=p.printTypes.indexOf(printType);
+  const pRow=lookupLE(pages*quantity,p.printTable,"c"); // "c"=전체카운터(p×q) 기준 구간
+  const pu=ptIdx>=0?(pRow.v[ptIdx]??0):0;              // v[idx]=해당 인쇄방식 원/p
   lines.push({key:"print",label:"인쇄비",unit:pu,qty:pages,total:pu*pages,desc:printType+" × "+pages+"p"});
-  const sr=p.sideRate[innerSide]??6.2;lines.push({key:"inner",label:"내지("+innerPaper+")",unit:sr,qty:pages,total:sr*pages,desc:innerSide+" "+sr+"원/p"});
-  const ep=p.endpapers[endpaper]?.[format]??0;lines.push({key:"endpaper",label:"면지",unit:ep,qty:1,total:ep,desc:endpaper});
-  const cs=p.formatMap[format]?.coverSize??"국4절";const cu=p.coverPapers[coverPaper]?.[cs]??0;lines.push({key:"cover",label:"표지("+coverPaper+")",unit:cu,qty:1,total:cu,desc:cs});
-  const cp=p.coverPrintRate[coverSide]??200;lines.push({key:"coverPrint",label:"표지인쇄",unit:cp,qty:1,total:cp,desc:coverSide});
-  const co=p.coatingTable[format]?.[coating]??0;lines.push({key:"coating",label:"코팅",unit:co,qty:1,total:co,desc:coating});
-  const bIdx=p.bindingTypes.indexOf(binding);const bRow=lookupLE(quantity,p.bindingTable,"q");const bc=bIdx>=0?(bRow.v[bIdx]??0):0;lines.push({key:"binding",label:"제본",unit:bc,qty:1,total:bc,desc:binding});
-  let pp=0;postProcessing.forEach(x=>{pp+=(p.postProc[x]??0);});if(pp>0)lines.push({key:"pp",label:"후가공",unit:pp,qty:1,total:pp,desc:postProcessing.join(",")});
-  const up=lines.reduce((s,l)=>s+l.total,0);const sub=Math.round(up)*quantity;const vat=Math.round(sub*0.1);
+
+  // 2. 내지 종이비: innerPapers[종이명][절수] → 1장 단가, 양면이면 ÷2
+  // 절수(innerSize)는 판형별로 다름: B6=32절, A5=국16절, B5=16절, A4=국8절
+  // 양면: 한 장 양쪽에 인쇄 → 1장 = 2페이지 → 페이지당 단가 = 장 단가 ÷ 2
+  const innerSize = p.formatMap[format]?.innerSize ?? "국8절";
+  const leafCost = (p.innerPapers[innerPaper] ?? {})[innerSize] ?? 0;
+  const sr = innerSide === "양면" ? leafCost / 2 : leafCost;
+  lines.push({key:"inner",label:"내지("+innerPaper+")",unit:sr,qty:pages,total:sr*pages,desc:innerSide+" "+innerSize+" "+sr.toFixed(3)+"원/p"});
+
+  // 3. 면지비: 판형별 고정 단가 (양장 등에서 앞뒤 속지 사용)
+  const ep=p.endpapers[endpaper]?.[format]??0;
+  lines.push({key:"endpaper",label:"면지",unit:ep,qty:1,total:ep,desc:endpaper});
+
+  // 4. 표지 절수 결정: 무선날개/양장 + A5/B5/A4 → 3절, 나머지 → 국4절
+  // (엑셀 표지규격 테이블 기준, B6은 모든 제본방식에서 국4절)
+  const cs = (["무선날개","양장"].includes(binding) && ["A5","B5","A4"].includes(format))
+    ? "3절" : (p.formatMap[format]?.coverSize ?? "국4절");
+  const cu=p.coverPapers[coverPaper]?.[cs]??0;
+  lines.push({key:"cover",label:"표지("+coverPaper+")",unit:cu,qty:1,total:cu,desc:cs});
+
+  // 5. 표지 인쇄비: 단면=200원, 양면=400원 (고정)
+  const cp=p.coverPrintRate[coverSide]??200;
+  lines.push({key:"coverPrint",label:"표지인쇄",unit:cp,qty:1,total:cp,desc:coverSide});
+
+  // 6. 코팅비: 표지 절수 기준으로 단가 조회 (국4절: 유광100/무광200, 3절: 유광150/무광250)
+  const co=p.coatingTable[cs]?.[coating]??0;
+  lines.push({key:"coating",label:"코팅",unit:co,qty:1,total:co,desc:coating});
+
+  // 7. 제본비: 부수 구간 계단식 (bindingTable "q"=기준 부수)
+  const bIdx=p.bindingTypes.indexOf(binding);
+  const bRow=lookupLE(quantity,p.bindingTable,"q");
+  const bc=bIdx>=0?(bRow.v[bIdx]??0):0;
+  lines.push({key:"binding",label:"제본",unit:bc,qty:1,total:bc,desc:binding});
+
+  // 8. 후가공비: 선택된 후가공 옵션 단가 합산 (재단, 접지, 귀돌이, 금/은박)
+  let pp=0;
+  postProcessing.forEach(x=>{pp+=(p.postProc[x]??0);});
+  if(pp>0)lines.push({key:"pp",label:"후가공",unit:pp,qty:1,total:pp,desc:postProcessing.join(",")});
+
+  // 최종 계산: 1부 단가 합계 → 공급가액 → 부가세 → 합계
+  const up=lines.reduce((s,l)=>s+l.total,0);
+  const sub=Math.round(up)*quantity; // 공급가액 (VAT 전)
+  const vat=Math.round(sub*0.1);    // 부가세 10%
   return{unitPrice:Math.round(up),subtotal:sub,vat,total:sub+vat,lines,quantity};
 }
 
+/**
+ * calcCustomQuote — 커스텀 상품 견적 계산
+ *
+ * 커스텀 상품은 관리자가 직접 설정한 구조를 따름:
+ *  - qtyTiers : 수량 구간별 기본가 (minQty 이상인 구간 중 최대값 적용)
+ *  - optGroups: 옵션 그룹 목록, 각 선택지마다 priceAdj(±가격 조정) 포함
+ *
+ * 예: 기본가 10,000원 + 표지 옵션 +2,000원 → 단가 12,000원
+ */
 function calcCustomQuote(prod,selections,quantity){
   if(!prod)return{unitPrice:0,subtotal:0,vat:0,total:0,lines:[],quantity:0};
   const lines=[];
-  // Base price from qty tier
-  let base=0;const tiers=[...(prod.qtyTiers||[])].sort((a,b)=>a.minQty-b.minQty);
+
+  // 수량 구간(qtyTiers)에서 현재 quantity에 해당하는 기본가 결정
+  // tiers를 minQty 오름차순 정렬 후, quantity >= minQty인 마지막 구간 적용
+  let base=0;
+  const tiers=[...(prod.qtyTiers||[])].sort((a,b)=>a.minQty-b.minQty);
   for(const t of tiers){if(quantity>=t.minQty)base=t.basePrice;}
   lines.push({key:"base",label:"기본가",unit:base,qty:1,total:base,desc:quantity+"부 구간"});
-  // Option adjustments
+
+  // 옵션 그룹별 선택된 항목의 가격 조정(priceAdj) 적용
+  // priceAdj > 0: 추가금, < 0: 할인, = 0: 기본 포함
   (prod.optGroups||[]).forEach(g=>{
     const sel=selections[g.id];if(!sel)return;
     const ch=g.choices.find(c=>c.id===sel);if(!ch)return;
     const adj=ch.priceAdj||0;
     lines.push({key:"opt_"+g.id,label:g.name+": "+ch.label,unit:adj,qty:1,total:adj,desc:adj===0?"포함":adj>0?"+₩"+fmt(adj):"-₩"+fmt(Math.abs(adj))});
   });
-  const up=Math.max(0,lines.reduce((s,l)=>s+l.total,0));const sub=Math.round(up)*quantity;const vat=Math.round(sub*0.1);
+
+  // 단가 합산 (최소 0원 보장) → 공급가액 → 부가세 → 합계
+  const up=Math.max(0,lines.reduce((s,l)=>s+l.total,0));
+  const sub=Math.round(up)*quantity;
+  const vat=Math.round(sub*0.1);
   return{unitPrice:Math.round(up),subtotal:sub,vat,total:sub+vat,lines,quantity};
 }
 
-// Paper price formula: 46판/국판은 기준가(입력), 나머지는 자동 계산
-// 3절=46판÷1500, 8절=46판÷4000, 16절=46판÷8000
-// 국4절=국판÷2000, 국8절=국판÷4000, 국16절=국판÷8000, 32절=국16절
+/**
+ * recalcPaper — 내지 종이 단가 자동 계산
+ *
+ * 46판/국판 두 기준가(직접 입력)로부터 나머지 7개 절수 단가를 자동 산출.
+ * 엑셀 원본과 동일한 환산식 사용:
+ *   46판 계열 : 3절=46판÷1500, 8절=46판÷4000, 16절=46판÷8000
+ *   국판 계열 : 국4절=국판÷2000, 국8절=국판÷4000, 국16절=국판÷8000
+ *   32절      = 국16절 (국판÷8000)
+ */
 function recalcPaper(paper){
   const p46=paper["46판"]||0,guk=paper["국판"]||0;
   return{...paper,"46판":p46,"3절":p46/1500,"8절":p46/4000,"16절":p46/8000,"32절":guk/8000,"국판":guk,"국4절":guk/2000,"국8절":guk/4000,"국16절":guk/8000};
 }
-const PAPER_BASE=new Set(["46판","국판"]); // 기준가 컬럼 (직접입력)
+// 관리자 가격 테이블 편집 시 직접 입력 컬럼 (나머지는 recalcPaper로 자동 계산)
+const PAPER_BASE=new Set(["46판","국판"]);
 
 // ═══════════════════════════════════════════════════
 // CONSTANTS
@@ -475,12 +577,39 @@ function Configure(){
   const innerPaperType=useMemo(()=>(cfg.innerPaper||"").match(/^(.*?)(\d+)$/)?.[1]||PAPER_TYPES[0],[cfg.innerPaper]);
   const printAvail=useMemo(()=>PTYPES.map((pt,i)=>{const r=lookupLE(cfg.pages,DEF_PRICING.printTable,"c");return r.v[i]!=null;}),[cfg.pages]);
   const togglePP=pp=>setCfg(p=>({...p,postProcessing:p.postProcessing.includes(pp)?p.postProcessing.filter(x=>x!==pp):[...p.postProcessing,pp]}));
+  /**
+   * handleAdd (Configure) — 일반 인쇄물 장바구니 담기
+   *
+   * 1. 첨부 파일이 있고 Supabase Storage가 활성화된 경우:
+   *    - "order-files" 버킷에 {uid}/{파일명} 경로로 업로드
+   *    - 업로드 성공 시 공개 URL(publicUrl)을 fileData에 저장
+   *    - 실패 시 url='' 으로 fallback (로컬 파일명만 기록)
+   * 2. Supabase 미설정 시: 파일 메타데이터만 저장 (url 없음)
+   * 3. cart 항목 구조: { id, cfg(사양), quote(견적), files(파일목록) }
+   */
   const handleAdd=async()=>{
     let fileData=[];
     if(files.length>0&&supabase){
-      for(const f of files){const path=`${uid()}/${f.name}`;const{error}=await supabase.storage.from("order-files").upload(path,f);if(!error){const{data:u}=supabase.storage.from("order-files").getPublicUrl(path);fileData.push({name:f.name,url:u?.publicUrl||""});}else fileData.push({name:f.name,url:""});}
-    }else{fileData=files.map(f=>({name:f.name,url:""}));}
-    addToCart({id:uid(),cfg:{...cfg},quote,files:fileData});setToast("장바구니에 담겼습니다");setTimeout(()=>go("cart"),800);
+      // Supabase Storage 업로드: 버킷="order-files", 경로="{랜덤uid}/{파일명}"
+      for(const f of files){
+        const path=`${uid()}/${f.name}`;
+        const{error}=await supabase.storage.from("order-files").upload(path,f);
+        if(!error){
+          // 업로드 성공 → 공개 URL 획득
+          const{data:u}=supabase.storage.from("order-files").getPublicUrl(path);
+          fileData.push({name:f.name,url:u?.publicUrl||""});
+        }else{
+          // 업로드 실패 → url 빈 문자열로 기록
+          fileData.push({name:f.name,url:""});
+        }
+      }
+    }else{
+      // Supabase 미설정: 파일명만 보존
+      fileData=files.map(f=>({name:f.name,url:""}));
+    }
+    addToCart({id:uid(),cfg:{...cfg},quote,files:fileData});
+    setToast("장바구니에 담겼습니다");
+    setTimeout(()=>go("cart"),800);
   };
   const handleCompare=()=>{addCompare({id:uid(),cfg:{...cfg},quote});setToast("비교 목록에 추가됨");};
   const handleSaveCfg=()=>{saveCfg({name:saveName||cfg.format+"/"+cfg.printType+"/"+cfg.binding,cfg:{...cfg}});setToast("사양이 저장되었습니다");setSaveName("");setShowSaved(false);};
@@ -790,12 +919,22 @@ function AdminLogin(){
   const[pw,setPw]=useState("");
   const[err,setErr]=useState("");
   const[loading,setLoading]=useState(false);
+  /**
+   * handleLogin — Supabase Auth 이메일/비밀번호 로그인
+   *
+   * - VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY 미설정 시 에러 표시
+   * - signInWithPassword 성공 → data.session을 Context(Ctx)의 setSession에 저장
+   *   → Admin 컴포넌트가 session 존재 여부로 AdminLogin/대시보드 분기 렌더링
+   * - 관리자 계정: admin@bookmoa.com (초기 PW: Bookmoa1234!)
+   */
   const handleLogin=async(e)=>{
     e.preventDefault();setErr("");setLoading(true);
+    // Supabase 클라이언트 미초기화 시 조기 종료
     if(!supabase){setErr("Supabase가 설정되지 않았습니다.");setLoading(false);return;}
+    // Supabase Auth: 이메일/비밀번호 인증 요청
     const{data,error}=await supabase.auth.signInWithPassword({email,password:pw});
     if(error)setErr("이메일 또는 비밀번호가 올바르지 않습니다.");
-    else setSession(data.session);
+    else setSession(data.session); // 로그인 성공 → 세션 전역 저장
     setLoading(false);
   };
   return(<div className="min-h-screen flex items-center justify-center" style={{background:T.warm}}>
@@ -1095,13 +1234,31 @@ function ProdConfigure(){
   const sel=(gid,cid)=>setSelections(p=>({...p,[gid]:cid}));
   const fileIcon=(name)=>{const ext=(name||"").split(".").pop()?.toLowerCase();if(ext==="pdf")return"📕";if(["jpg","jpeg","png","gif","webp"].includes(ext))return"🖼️";if(["ai","eps"].includes(ext))return"🎨";return"📄";};
   const handleDrop=(e)=>{e.preventDefault();setDragOver(false);setFiles(p=>[...p,...Array.from(e.dataTransfer?.files||[])]);};
+  /**
+   * handleAdd (ProdConfigure) — 커스텀 상품 장바구니 담기
+   *
+   * 1. cfgSummary 구성: 선택된 옵션 ID(selections) + 표시용 레이블(selLabels) 포함
+   * 2. 파일 업로드: Configure.handleAdd와 동일 로직 (Supabase Storage "order-files")
+   * 3. cart 항목에 isCustom:true 플래그 추가
+   *    → 일반 도서 사양 필드(pages, innerPaper 등)는 "-"로 채워 호환성 유지
+   */
   const handleAdd=async()=>{
+    // 옵션 선택 요약: selections(id맵) + selLabels(표시명맵) 동시 구성
     const cfgSummary={productId:prod.id,productName:prod.name,quantity:qty,selections:{...selections},selLabels:{}};
     (prod.optGroups||[]).forEach(g=>{const ch=g.choices.find(c=>c.id===selections[g.id]);if(ch)cfgSummary.selLabels[g.name]=ch.label;});
     let fileData=[];
     if(files.length>0&&supabase){
-      for(const f of files){const path=`${uid()}/${f.name}`;const{error}=await supabase.storage.from("order-files").upload(path,f);if(!error){const{data:u}=supabase.storage.from("order-files").getPublicUrl(path);fileData.push({name:f.name,url:u?.publicUrl||""});}else fileData.push({name:f.name,url:""});}
+      // Supabase Storage 업로드 (일반 인쇄물과 동일 로직)
+      for(const f of files){
+        const path=`${uid()}/${f.name}`;
+        const{error}=await supabase.storage.from("order-files").upload(path,f);
+        if(!error){
+          const{data:u}=supabase.storage.from("order-files").getPublicUrl(path);
+          fileData.push({name:f.name,url:u?.publicUrl||""});
+        }else fileData.push({name:f.name,url:""});
+      }
     }else{fileData=files.map(f=>({name:f.name,url:""}));}
+    // cart 항목: 커스텀 상품은 isCustom:true, 도서 사양 필드는 "-"로 채움
     addToCart({id:uid(),cfg:{...cfgSummary,format:prod.name,printType:Object.values(cfgSummary.selLabels).slice(0,2).join("/"),binding:"-",pages:"-",innerPaper:"-",innerSide:"-",coverPaper:"-",coverSide:"-",coating:"-",endpaper:"-",postProcessing:[],quantity:qty},quote,files:fileData,isCustom:true});
     setToast("장바구니에 담겼습니다");setTimeout(()=>go("cart"),800);
   };
@@ -1273,22 +1430,62 @@ function CompareModal({open,onClose,items}){if(!open||items.length<2)return null
 export default function App(){
   const[page,setPage]=useState("home");const[cart,setCart]=useState([]);const[orders,setOrders]=useState([]);const[pricing,setPricingS]=useState(DEF_PRICING);const[compList,setCompList]=useState([]);const[compOpen,setCompOpen]=useState(false);const[notifs,setNotifs]=useState([]);const[priceHistory,setPriceHistory]=useState([]);const[savedCfgs,setSavedCfgs]=useState([]);const[settings,setSettingsS]=useState({bizName:"(주)북모아",bizNo:"508-81-40669",tel:"1644-1814",fax:"02-2260-9090",email:"book@bookmoa.com",addr:"서울특별시 성동구 성수동2가 315-61 성수역 SK V1 Tower 706호",ceo:"김동명",taxRate:10,deliveryFee:0,deliveryDays:"3~5",memo:""});const[customProducts,setCustomProductsS]=useState([]);const[loaded,setLoaded]=useState(false);const[pageArg,setPageArg]=useState(null);const[session,setSession]=useState(null);
 
+  /**
+   * [DB 초기 로드] 앱 마운트 시 스토리지에서 전체 상태 일괄 로드
+   *
+   * sLoad(key, fallback) — localStorage 또는 Supabase app_config 테이블 자동 선택
+   * 스토리지 키 목록:
+   *   p4-cart     : 장바구니 항목 배열
+   *   p4-orders   : 주문 목록 배열
+   *   p4-pricing  : 관리자 수정 가격 테이블 (null이면 DEF_PRICING 사용)
+   *   p4-notifs   : 알림 목록 배열
+   *   p4-phist    : 가격 변경 이력 배열
+   *   p4-saved    : 저장된 견적 사양 배열
+   *   p4-settings : 사업자 정보/설정 (null이면 기본값 유지)
+   *   p4-cprods   : 커스텀 상품 배열
+   * loaded=true 설정 후부터 저장 useEffect들이 활성화됨 (초기화 전 덮어쓰기 방지)
+   */
   useEffect(()=>{(async()=>{
-    const c=await sLoad("p4-cart",[]);const o=await sLoad("p4-orders",[]);const p=await sLoad("p4-pricing",null);const n=await sLoad("p4-notifs",[]);const ph=await sLoad("p4-phist",[]);const sc=await sLoad("p4-saved",[]);const st=await sLoad("p4-settings",null);const cp=await sLoad("p4-cprods",[]);
-    setCart(c);setOrders(o);if(p)setPricingS(p);setNotifs(n);setPriceHistory(ph);setSavedCfgs(sc);if(st)setSettingsS(prev=>({...prev,...st}));setCustomProductsS(cp);setLoaded(true);
+    const c=await sLoad("p4-cart",[]);
+    const o=await sLoad("p4-orders",[]);
+    const p=await sLoad("p4-pricing",null);
+    const n=await sLoad("p4-notifs",[]);
+    const ph=await sLoad("p4-phist",[]);
+    const sc=await sLoad("p4-saved",[]);
+    const st=await sLoad("p4-settings",null);
+    const cp=await sLoad("p4-cprods",[]);
+    setCart(c);setOrders(o);
+    if(p)setPricingS(p);           // 저장된 가격 테이블 있으면 DEF_PRICING 대체
+    setNotifs(n);setPriceHistory(ph);setSavedCfgs(sc);
+    if(st)setSettingsS(prev=>({...prev,...st})); // 기본값에 저장된 설정 병합
+    setCustomProductsS(cp);
+    setLoaded(true); // 로드 완료 플래그 → 이후 변경 감지 useEffect 활성화
   })();},[]);
+
+  // [DB 자동 저장] 각 상태 변경 시 스토리지에 즉시 반영 (loaded 전 무시)
   useEffect(()=>{if(loaded)sSave("p4-cart",cart);},[cart,loaded]);
   useEffect(()=>{if(loaded)sSave("p4-orders",orders);},[orders,loaded]);
   useEffect(()=>{if(loaded)sSave("p4-notifs",notifs);},[notifs,loaded]);
   useEffect(()=>{if(loaded)sSave("p4-phist",priceHistory);},[priceHistory,loaded]);
   useEffect(()=>{if(loaded)sSave("p4-saved",savedCfgs);},[savedCfgs,loaded]);
   useEffect(()=>{if(loaded)sSave("p4-cprods",customProducts);},[customProducts,loaded]);
+  // 참고: pricing(가격테이블)과 settings(사업자정보)는 Admin에서 명시적 저장 (여기서 자동저장 안 함)
 
+  /**
+   * [Supabase Auth 세션 관리] 앱 로드 시 기존 세션 복원 + 인증 상태 실시간 감지
+   *
+   * - getSession(): 새로고침 후에도 로그인 상태 유지 (Supabase가 토큰 자동 갱신)
+   * - onAuthStateChange(): 로그인/로그아웃/토큰갱신 이벤트 → session 상태 업데이트
+   * - session이 null이면 Admin 컴포넌트에서 AdminLogin UI 렌더링
+   * - Supabase 미설정(supabase=null) 시 전체 건너뜀
+   */
   useEffect(()=>{
     if(!supabase)return;
+    // 페이지 새로고침 시 기존 세션 복원
     supabase.auth.getSession().then(({data})=>setSession(data.session));
+    // 인증 이벤트 실시간 구독 (SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED 등)
     const{data:{subscription}}=supabase.auth.onAuthStateChange((_,s)=>setSession(s));
-    return()=>subscription.unsubscribe();
+    return()=>subscription.unsubscribe(); // 컴포넌트 언마운트 시 구독 해제
   },[]);
 
   const go=useCallback((p,arg)=>{setPage(p);setPageArg(arg||null);window.scrollTo(0,0);},[]);
